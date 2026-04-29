@@ -60,7 +60,7 @@ trainer:
   logger: ["console", "wandb", "file"]
   n_gpus_per_node: 1
   nnodes: 1
-  save_freq: 5
+  save_freq: 100
   hf_push_enabled: False
   test_freq: 5
   max_actor_ckpt_to_keep: 10
