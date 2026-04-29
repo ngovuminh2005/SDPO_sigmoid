@@ -1,0 +1,72 @@
+# Target class for this configuration
+_target_: verl.workers.config.FSDPOptimizerConfig
+
+# Optimizer class name (e.g., "AdamW", "AdamW8bit", "_AdamW", "Adam")
+optimizer: AdamW
+
+# Module path to import optimizer
+# Examples: "torch.optim", "torchao.optim", "bitsandbytes.optim"
+optimizer_impl: torch.optim
+
+# Learning rate (AdamW / torch.optim optimizers use this directly).
+# For Muon* aux+Adam optimizers: this is the auxiliary Adam branch LR unless `adam_aux_lr` is set.
+lr: 1e-5
+
+# Optional: auxiliary Adam LR for Muon* optimizers only (overrides `lr` for that branch).
+adam_aux_lr: 5e-6 #1e-5 
+
+# LR warmup steps ratio
+lr_warmup_steps_ratio: 0.0
+
+# Total training steps
+total_training_steps: -1
+
+# Weight decay
+weight_decay: 0.01
+
+# LR warmup steps
+lr_warmup_steps: -1
+
+# Betas for Adam optimizer
+betas: [0.9, 0.999]
+
+# Clip gradient
+clip_grad: 1.0
+
+# Minimum LR ratio for cosine schedule
+min_lr_ratio: 0.0
+
+# Number of cosine cycles in LR schedule
+num_cycles: 0.5
+
+# LR scheduler type: "constant" or "cosine"
+lr_scheduler_type: constant
+
+# deprecated
+warmup_style: null
+
+# Additional optimizer-specific keyword arguments
+# Example for torchao with bf16 stochastic rounding:
+# optimizer_impl: torchao.optim
+# optimizer: _AdamW
+# override_optimizer_config:
+#   bf16_stochastic_round: true
+override_optimizer_config: null
+
+# Muon + Adam. `build_optimizer` splits named_parameters: ndim>=2 -> Muon unless name matches
+# muon_exclude_name_substrings. optimizer_impl is ignored for these optimizers.
+#
+# Recommended single install (all 4 optimizer class names in module `muon`):
+#   pip install git+https://github.com/PhiVanDat123/sigmoid_muon
+#   MuonWithAuxAdam | SingleDeviceMuonWithAuxAdam | MuonWithAuxAdam_sigmoid | SingleDeviceMuonWithAuxAdam_sigmoid
+# Minimal upstream (no *_sigmoid classes): pip install git+https://github.com/KellerJordan/Muon
+# (Only one `muon` package should be installed at a time.)
+#
+# optimizer: SingleDeviceMuonWithAuxAdam_sigmoid
+# optimizer_impl: torch.optim
+
+# Muon branch LR (Muon* optimizers only; default 0.02 in code if omitted).
+muon_lr: 0.002 #0.005
+muon_momentum: 0.95
+muon_exclude_name_substrings: [embed, lm_head, wte, vision]
+adam_aux_eps: 1e-10
