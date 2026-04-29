@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export WANDB_API_KEY="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"
+export WANDB_API_KEY="wandb_api_key"
 export WANDB_ENTITY="Memory-based-Optimizer"
 export BASE_WANDB_PROJECT="sdpo-full-run"
 export WANDB_PROJECT="$BASE_WANDB_PROJECT"
