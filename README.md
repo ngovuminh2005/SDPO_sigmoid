@@ -71,4 +71,11 @@ Sau khi `vllm` và `flash-attn` đã OK, cài các package còn lại bằng scr
 bash install_no_deps.sh
 ```
 
+## 6. Chạy training
+
+Từ repo root:
+
+```bash
+bash experiments/generalization/run_sdpo_local.sh
+
 Script này dùng `--no-deps`, không đụng lại `torch`, `vllm`, `flash-attn`, `numpy`.
