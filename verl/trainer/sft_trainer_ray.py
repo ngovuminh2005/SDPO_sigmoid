@@ -38,6 +38,7 @@ from verl.utils.dataset.dataset_utils import SFTTensorCollator
 from verl.utils.dataset.multiturn_sft_dataset import MultiTurnSFTDataset
 from verl.utils.device import auto_set_device, get_device_name
 from verl.utils.logger import log_with_rank
+from verl.utils.ray_init import prepare_ray_init_kwargs
 from verl.utils.tracking import Tracking
 from verl.workers.engine_workers import TrainingWorker
 
@@ -351,7 +352,11 @@ class SFTTrainer:
 
 
 def run_sft(config):
-    ray.init()
+    ray_init_kwargs = prepare_ray_init_kwargs(
+        ray_init_kwargs=config.get("ray_kwargs", {}).get("ray_init", {}),
+        disable_tracking=config.get("ray_kwargs", {}).get("disable_tracking", True),
+    )
+    ray.init(**OmegaConf.to_container(ray_init_kwargs))
     trainer = SFTTrainer(config=config)
     trainer.fit()
 

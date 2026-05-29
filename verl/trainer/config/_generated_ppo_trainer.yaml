@@ -629,6 +629,7 @@ global_profiler:
 transfer_queue:
   enable: false
 ray_kwargs:
+  disable_tracking: false
   ray_init:
     num_cpus: null
   timeline_json_file: null

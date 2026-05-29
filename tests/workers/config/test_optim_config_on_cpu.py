@@ -49,28 +49,46 @@ class TestFSDPOptimizerConfigCPU:
         assert config.num_cycles == num_cycles
 
     def test_muon_auxadam_requires_module(self):
-        pytest.importorskip("muon")
         cfg = FSDPOptimizerConfig(lr=1e-3, optimizer="SingleDeviceMuonWithAuxAdam", optimizer_impl="torch.optim")
         m = nn.Linear(8, 4)
         with pytest.raises(ValueError, match="requires `module`"):
             build_optimizer(m.parameters(), cfg)
 
     def test_muon_auxadam_builds_with_module(self):
-        pytest.importorskip("muon")
-        cfg = FSDPOptimizerConfig(lr=1e-3, optimizer="SingleDeviceMuonWithAuxAdam", optimizer_impl="torch.optim")
+        cfg = FSDPOptimizerConfig(
+            lr=1e-3,
+            optimizer="SingleDeviceMuonWithAuxAdam",
+            optimizer_impl="torch.optim",
+            weight_decay=0.01,
+            muon_lr=2e-3,
+            adam_aux_lr=1e-3,
+        )
         m = nn.Sequential(nn.Linear(8, 4), nn.LayerNorm(4))
         opt = build_optimizer(m.parameters(), cfg, module=m)
         assert opt is not None
         assert len(opt.param_groups) >= 1
 
-    def test_muon_sigmoid_auxadam_builds_if_fork_installed(self):
-        muon = pytest.importorskip("muon")
-        if not hasattr(muon, "SingleDeviceMuonWithAuxAdam_sigmoid"):
-            pytest.skip("sigmoid_muon fork not installed (no SingleDeviceMuonWithAuxAdam_sigmoid)")
+    def test_memory_muon_auxadam_builds_with_module(self):
         cfg = FSDPOptimizerConfig(
-            lr=1e-3, optimizer="SingleDeviceMuonWithAuxAdam_sigmoid", optimizer_impl="torch.optim"
+            lr=1e-3,
+            optimizer="SingleDeviceMemoryMuonWithAuxAdam",
+            optimizer_impl="torch.optim",
+            weight_decay=0.01,
+            muon_lr=2e-3,
+            adam_aux_lr=1e-3,
+            muon_nesterov=True,
+            muon_ns_steps=5,
+            memory_num_centroids=8,
+            memory_centroid_dim=32,
+            memory_lambda=0.02,
+            memory_init_seed=123,
+            memory_ema_decay=0.95,
+            memory_ema_eps=1e-8,
+            memory_step_update=4,
+            memory_ema_ws_steps=7,
         )
         m = nn.Sequential(nn.Linear(8, 4), nn.LayerNorm(4))
         opt = build_optimizer(m.parameters(), cfg, module=m)
         assert opt is not None
+        assert opt.ema_ws_steps == 7
         assert len(opt.param_groups) >= 1

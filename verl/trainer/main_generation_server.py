@@ -34,6 +34,7 @@ from omegaconf import OmegaConf
 from openai.types.chat import ChatCompletion
 
 from verl.utils.hdfs_io import makedirs
+from verl.utils.ray_init import prepare_ray_init_kwargs
 from verl.workers.rollout.replica import get_rollout_replica_class
 
 
@@ -121,7 +122,12 @@ async def generate(
 
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
 def main(config):
-    ray.init(runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_USE_V1": "1"}})
+    ray_init_kwargs = prepare_ray_init_kwargs(
+        ray_init_kwargs=config.ray_kwargs.get("ray_init", {}),
+        default_runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_USE_V1": "1"}},
+        disable_tracking=config.ray_kwargs.get("disable_tracking", True),
+    )
+    ray.init(**OmegaConf.to_container(ray_init_kwargs))
 
     pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
     OmegaConf.resolve(config)

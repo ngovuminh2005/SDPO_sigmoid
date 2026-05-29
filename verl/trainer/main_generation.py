@@ -37,6 +37,7 @@ from verl.utils import hf_tokenizer
 from verl.utils.fs import copy_to_local
 from verl.utils.hdfs_io import makedirs
 from verl.utils.model import compute_position_id_with_mask
+from verl.utils.ray_init import prepare_ray_init_kwargs
 from verl.workers.fsdp_workers import ActorRolloutRefWorker
 
 
@@ -50,9 +51,11 @@ def run_generation(config) -> None:
         # this is for local ray cluster
         default_runtime_env = {"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}}
         ray_init_kwargs = config.ray_kwargs.get("ray_init", {})
-        runtime_env_kwargs = ray_init_kwargs.get("runtime_env", {})
-        runtime_env = OmegaConf.merge(default_runtime_env, runtime_env_kwargs)
-        ray_init_kwargs = OmegaConf.create({**ray_init_kwargs, "runtime_env": runtime_env})
+        ray_init_kwargs = prepare_ray_init_kwargs(
+            ray_init_kwargs=ray_init_kwargs,
+            default_runtime_env=default_runtime_env,
+            disable_tracking=config.ray_kwargs.get("disable_tracking", True),
+        )
         print(f"ray init kwargs: {ray_init_kwargs}")
         ray.init(**OmegaConf.to_container(ray_init_kwargs))
 

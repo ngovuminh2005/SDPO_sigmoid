@@ -2,7 +2,7 @@ defaults:
   - ppo_trainer
   - user
   - _self_
-max_model_len: 18944
+max_model_len: 8192
 actor_rollout_ref:
   actor:
     ppo_mini_batch_size: 32

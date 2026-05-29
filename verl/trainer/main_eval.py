@@ -28,6 +28,7 @@ from tqdm import tqdm
 
 from verl.trainer.ppo.reward import get_custom_reward_fn
 from verl.utils.fs import copy_to_local
+from verl.utils.ray_init import prepare_ray_init_kwargs
 
 
 @ray.remote
@@ -50,7 +51,11 @@ def main(config):
 
     # Initialize Ray
     if not ray.is_initialized():
-        ray.init(**OmegaConf.to_container(config.ray_kwargs.get("ray_init", {})))
+        ray_init_kwargs = prepare_ray_init_kwargs(
+            ray_init_kwargs=config.ray_kwargs.get("ray_init", {}),
+            disable_tracking=config.ray_kwargs.get("disable_tracking", True),
+        )
+        ray.init(**OmegaConf.to_container(ray_init_kwargs))
 
     # evaluate test_score based on data source
     data_source_reward = defaultdict(list)

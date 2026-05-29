@@ -26,6 +26,7 @@ import ray
 import torch
 
 from verl.utils.hdfs_io import copy, makedirs
+from verl.utils.ray_init import prepare_ray_init_kwargs
 
 remote_copy = ray.remote(copy)
 
@@ -96,7 +97,7 @@ if __name__ == "__main__":
         data = {"obs": torch.randn(10, 20)}
         dump_data(data, f"process_{iter}_obs")
 
-    ray.init()
+    ray.init(**prepare_ray_init_kwargs())
 
     output_lst = []
 

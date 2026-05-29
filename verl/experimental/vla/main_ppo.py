@@ -26,6 +26,7 @@ from verl.trainer.constants_ppo import get_ppo_ray_runtime_env
 from verl.trainer.ppo.ray_trainer import ResourcePoolManager
 from verl.trainer.ppo.utils import Role
 from verl.utils.device import is_cuda_available
+from verl.utils.ray_init import prepare_ray_init_kwargs
 
 from .rob_ray_trainer import RobRayPPOTrainer
 
@@ -49,9 +50,11 @@ def main(config):
     if not ray.is_initialized():
         default_runtime_env = get_ppo_ray_runtime_env()
         ray_init_kwargs = config.ray_kwargs.get("ray_init", {})
-        runtime_env_kwargs = ray_init_kwargs.get("runtime_env", {})
-        runtime_env = OmegaConf.merge(default_runtime_env, runtime_env_kwargs)
-        ray_init_kwargs = OmegaConf.create({**ray_init_kwargs, "runtime_env": runtime_env})
+        ray_init_kwargs = prepare_ray_init_kwargs(
+            ray_init_kwargs=ray_init_kwargs,
+            default_runtime_env=default_runtime_env,
+            disable_tracking=config.ray_kwargs.get("disable_tracking", True),
+        )
         logger.info(f"ray init kwargs: {ray_init_kwargs}")
         ray.init(**OmegaConf.to_container(ray_init_kwargs))
 

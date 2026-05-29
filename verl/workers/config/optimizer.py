@@ -21,17 +21,20 @@ from verl.base_config import BaseConfig
 
 __all__ = ["OptimizerConfig", "FSDPOptimizerConfig", "McoreOptimizerConfig", "build_optimizer", "VeOmniOptimizerConfig"]
 
-# Upstream: https://github.com/KellerJordan/Muon — MuonWithAuxAdam, SingleDeviceMuonWithAuxAdam only.
-# Sigmoid fork: https://github.com/PhiVanDat123/sigmoid_muon — ships all four class names in one `muon` module:
-#   MuonWithAuxAdam, SingleDeviceMuonWithAuxAdam, MuonWithAuxAdam_sigmoid, SingleDeviceMuonWithAuxAdam_sigmoid
-MUON_AUXADAM_OPTIMIZER_NAMES = frozenset(
+# Muon implementations are expected to be importable as the `muon` module.
+MUON_AUX_ADAM_OPTIMIZER_NAMES = frozenset(
     {
         "MuonWithAuxAdam",
         "SingleDeviceMuonWithAuxAdam",
-        "MuonWithAuxAdam_sigmoid",
-        "SingleDeviceMuonWithAuxAdam_sigmoid",
     }
 )
+MEMORY_MUON_AUX_ADAM_OPTIMIZER_NAMES = frozenset(
+    {
+        "MemoryMuonWithAuxAdam",
+        "SingleDeviceMemoryMuonWithAuxAdam",
+    }
+)
+GROUPED_MUON_OPTIMIZER_NAMES = MUON_AUX_ADAM_OPTIMIZER_NAMES | MEMORY_MUON_AUX_ADAM_OPTIMIZER_NAMES
 
 
 def _cfg_get(config: Any, name: str, default=None):
@@ -55,31 +58,7 @@ def _normalize_betas(betas) -> tuple[float, float]:
     return (0.9, 0.999)
 
 
-def _build_muon_with_aux_adam_optimizer(module: Any, config: Any):
-    """Build Muon + auxiliary AdamW param groups (upstream or sigmoid fork, same param_groups API)."""
-    opt_name = _cfg_get(config, "optimizer", "AdamW")
-    try:
-        import muon as _muon_pkg
-    except ImportError as e:
-        raise ImportError(
-            "Muon aux+Adam optimizers require a `muon` Python module. Recommended (all 4 optimizer classes):\n"
-            "  pip install git+https://github.com/PhiVanDat123/sigmoid_muon\n"
-            "Minimal upstream (MuonWithAuxAdam + SingleDeviceMuonWithAuxAdam only, no *_sigmoid):\n"
-            "  pip install git+https://github.com/KellerJordan/Muon\n"
-            "(Both use import name `muon`; install only one environment-wide to avoid clashes.)\n"
-        ) from e
-
-    cls = getattr(_muon_pkg, opt_name, None)
-    if cls is None:
-        raise AttributeError(
-            f"Optimizer class `{opt_name}` not found in installed `muon` package. "
-            f"Available names include: {[n for n in dir(_muon_pkg) if not n.startswith('_')]}\n"
-            "For all four options (MuonWithAuxAdam, SingleDeviceMuonWithAuxAdam, *_sigmoid), install:\n"
-            "  pip install git+https://github.com/PhiVanDat123/sigmoid_muon\n"
-            "Upstream KellerJordan/Muon does not define the *_sigmoid classes.\n"
-            "  https://github.com/PhiVanDat123/sigmoid_muon"
-        )
-
+def _split_muon_and_adam_params(module: Any, config: Any):
     excludes = _cfg_get(config, "muon_exclude_name_substrings")
     if not excludes:
         excludes = [
@@ -107,6 +86,29 @@ def _build_muon_with_aux_adam_optimizer(module: Any, config: Any):
         else:
             adam_params.append(p)
 
+    return muon_params, adam_params, excludes_l
+
+
+def _build_grouped_muon_optimizer(module: Any, config: Any):
+    """Build Muon/Memory-Muon optimizers that split params into Muon and aux Adam groups."""
+    opt_name = _cfg_get(config, "optimizer", "AdamW")
+    try:
+        import muon as muon_mod
+    except ImportError as e:
+        raise ImportError(
+            "Muon-based optimizers require the `muon` module to be installed in the Python environment. "
+            "From this repo root, run `python -m pip install -e . --no-deps` so `muon.py` is exposed as an installed module."
+        ) from e
+
+    cls = getattr(muon_mod, opt_name, None)
+    if cls is None:
+        raise AttributeError(
+            f"Optimizer class `{opt_name}` not found in installed `muon` module. "
+            f"Available names include: {[n for n in dir(muon_mod) if not n.startswith('_')]}"
+        )
+
+    muon_params, adam_params, excludes_l = _split_muon_and_adam_params(module, config)
+
     adam_aux_lr_cfg = _cfg_get(config, "adam_aux_lr", None)
     lr_adam = (
         float(adam_aux_lr_cfg)
@@ -119,6 +121,8 @@ def _build_muon_with_aux_adam_optimizer(module: Any, config: Any):
     muon_lr_cfg = _cfg_get(config, "muon_lr", None)
     muon_lr = float(muon_lr_cfg) if muon_lr_cfg is not None else 0.02
     muon_momentum = float(_cfg_get(config, "muon_momentum", 0.95))
+    muon_nesterov = bool(_cfg_get(config, "muon_nesterov", True))
+    muon_ns_steps = int(_cfg_get(config, "muon_ns_steps", 5))
 
     param_groups = []
     if adam_params:
@@ -133,15 +137,17 @@ def _build_muon_with_aux_adam_optimizer(module: Any, config: Any):
             )
         )
     if muon_params:
-        param_groups.append(
-            dict(
-                params=muon_params,
-                lr=muon_lr,
-                momentum=muon_momentum,
-                weight_decay=wd,
-                use_muon=True,
-            )
+        muon_group = dict(
+            params=muon_params,
+            lr=muon_lr,
+            momentum=muon_momentum,
+            weight_decay=wd,
+            use_muon=True,
         )
+        if opt_name in MEMORY_MUON_AUX_ADAM_OPTIMIZER_NAMES:
+            muon_group["nesterov"] = muon_nesterov
+            muon_group["ns_steps"] = muon_ns_steps
+        param_groups.append(muon_group)
     if not param_groups:
         raise ValueError(f"{opt_name}: no trainable parameters found on module.")
 
@@ -150,7 +156,20 @@ def _build_muon_with_aux_adam_optimizer(module: Any, config: Any):
         f"{len(adam_params)} tensors -> Adam (name excludes: {list(excludes_l)})"
     )
 
-    return cls(param_groups)
+    optimizer_kwargs = {}
+    if opt_name in MEMORY_MUON_AUX_ADAM_OPTIMIZER_NAMES:
+        optimizer_kwargs.update(
+            num_centroids=int(_cfg_get(config, "memory_num_centroids", 16)),
+            centroid_dim=int(_cfg_get(config, "memory_centroid_dim", 1024)),
+            lambda_memory=float(_cfg_get(config, "memory_lambda", 0.01)),
+            memory_init_seed=_cfg_get(config, "memory_init_seed", None),
+            ema_decay=float(_cfg_get(config, "memory_ema_decay", 0.99)),
+            ema_eps=float(_cfg_get(config, "memory_ema_eps", 1e-8)),
+            step_update=int(_cfg_get(config, "memory_step_update", 64)),
+            ema_ws_steps=int(_cfg_get(config, "memory_ema_ws_steps", 512)),
+        )
+
+    return cls(param_groups, **optimizer_kwargs)
 
 
 @dataclass
@@ -212,20 +231,31 @@ class FSDPOptimizerConfig(OptimizerConfig):
     """FSDP optimizer configuration extending base OptimizerConfig.
 
     Args:
-        optimizer (str): Optimizer class name (e.g., "AdamW", "AdamW8bit", "_AdamW").
+        optimizer (str): Optimizer class name (e.g., "AdamW", "SingleDeviceMuonWithAuxAdam",
+            "SingleDeviceMemoryMuonWithAuxAdam").
         optimizer_impl (str): Module path to import optimizer from (e.g., "torch.optim", "torchao.optim",
             "bitsandbytes.optim").
         lr (float): Learning rate.
         min_lr_ratio (Optional[float]): Minimum LR ratio for cosine schedule.
         lr_scheduler_type (str): LR scheduler type: "constant" or "cosine".
         num_cycles (float): Number of cosine cycles in LR schedule.
-        muon_lr (Optional[float]): LR for the Muon branch when optimizer is MuonWithAuxAdam /
-            SingleDeviceMuonWithAuxAdam. Defaults to 0.02 if unset.
+        muon_lr (Optional[float]): LR for the Muon branch when optimizer is a Muon/Memory-Muon aux+Adam variant.
+            Defaults to 0.02 if unset.
         muon_momentum (float): Momentum for the Muon branch.
+        muon_nesterov (bool): Whether Memory-Muon uses Nesterov-style update composition.
+        muon_ns_steps (int): Newton-Schulz steps for Memory-Muon.
         muon_exclude_name_substrings (Optional[list[str]]): Name substrings forcing the Adam branch.
         adam_aux_eps (float): Epsilon for the auxiliary Adam branch.
         adam_aux_lr (Optional[float]): If set, learning rate for the auxiliary Adam branch only (Muon* optimizers).
             If None, the top-level ``lr`` is used for that branch (same as standard AdamW in this config).
+        memory_num_centroids (int): Number of centroids for Memory-Muon.
+        memory_centroid_dim (int): Projected memory dimension for Memory-Muon.
+        memory_lambda (float): Memory correction strength for Memory-Muon.
+        memory_init_seed (Optional[int]): Optional seed for Memory-Muon memory initialization.
+        memory_ema_decay (float): EMA decay for centroid updates in Memory-Muon.
+        memory_ema_eps (float): Numerical stability term for Memory-Muon EMA updates.
+        memory_step_update (int): Number of queued samples before Memory-Muon updates the memory bank.
+        memory_ema_ws_steps (int): Warm-start steps before Memory-Muon EMA centroid updates are enabled.
     """
 
     _mutable_fields = OptimizerConfig._mutable_fields.copy()
@@ -241,9 +271,19 @@ class FSDPOptimizerConfig(OptimizerConfig):
     override_optimizer_config: Optional[dict] = None
     muon_lr: Optional[float] = None
     muon_momentum: float = 0.95
+    muon_nesterov: bool = True
+    muon_ns_steps: int = 5
     muon_exclude_name_substrings: Optional[list[str]] = None
     adam_aux_eps: float = 1e-10
     adam_aux_lr: Optional[float] = None
+    memory_num_centroids: int = 16
+    memory_centroid_dim: int = 1024
+    memory_lambda: float = 0.01
+    memory_init_seed: Optional[int] = None
+    memory_ema_decay: float = 0.99
+    memory_ema_eps: float = 1e-8
+    memory_step_update: int = 64
+    memory_ema_ws_steps: int = 512
 
     def __post_init__(self):
         if self.warmup_style is not None:
@@ -294,9 +334,8 @@ def build_optimizer(parameters, config: FSDPOptimizerConfig, module: Any = None)
     Args:
         parameters: Model parameters to optimize
         config: FSDPOptimizerConfig with optimizer settings
-        module: Optional `nn.Module` (required for MuonWithAuxAdam / SingleDeviceMuonWithAuxAdam /
-            MuonWithAuxAdam_sigmoid / SingleDeviceMuonWithAuxAdam_sigmoid) used to split `named_parameters()`
-            into Muon vs auxiliary Adam groups.
+        module: Optional `nn.Module` (required for Muon/Memory-Muon aux+Adam optimizers) used to split
+            `named_parameters()` into Muon vs auxiliary Adam groups.
 
     Returns:
         Optimizer instance
@@ -315,21 +354,24 @@ def build_optimizer(parameters, config: FSDPOptimizerConfig, module: Any = None)
         config.optimizer_impl = "bitsandbytes.optim"
         config.optimizer = "AdamW8bit"
 
-        # Muon + Adam. Requires `module=`. One install of sigmoid_muon exposes all four classes:
-        #   pip install git+https://github.com/PhiVanDat123/sigmoid_muon
-        # config.optimizer = "SingleDeviceMuonWithAuxAdam_sigmoid"  # or MuonWithAuxAdam / SingleDeviceMuonWithAuxAdam / MuonWithAuxAdam_sigmoid
+        # Muon + Adam. Requires `module=` and an installed `muon` module.
+        # config.optimizer = "SingleDeviceMuonWithAuxAdam"
+        # build_optimizer(model.parameters(), config, module=model)
+        #
+        # Memory-Muon + Adam. Requires `module=` and an installed `muon` module.
+        # config.optimizer = "SingleDeviceMemoryMuonWithAuxAdam"
         # build_optimizer(model.parameters(), config, module=model)
     """
     import importlib
 
     opt_name = _cfg_get(config, "optimizer", "AdamW")
-    if opt_name in MUON_AUXADAM_OPTIMIZER_NAMES:
+    if opt_name in GROUPED_MUON_OPTIMIZER_NAMES:
         if module is None:
             raise ValueError(
                 f"`{opt_name}` requires `module` (the trainable `nn.Module`) so parameters can be split into "
                 "Muon vs Adam groups. Call: build_optimizer(model.parameters(), config, module=model)."
             )
-        return _build_muon_with_aux_adam_optimizer(module, config)
+        return _build_grouped_muon_optimizer(module, config)
 
     optimizer_args = {
         "lr": config.lr,

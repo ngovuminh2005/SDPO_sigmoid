@@ -23,6 +23,7 @@ from omegaconf import OmegaConf
 
 from verl.single_controller.base.decorator import Dispatch, register
 from verl.single_controller.ray import RayClassWithInitArgs, RayResourcePool, RayWorkerGroup
+from verl.utils.ray_init import prepare_ray_init_kwargs
 from verl.utils.megatron_utils import get_hf_model_checkpoint_path, load_megatron_model_to_gpu
 from verl.workers.megatron_workers import ActorRolloutRefWorker
 
@@ -71,9 +72,11 @@ def run_merge(config) -> None:
         # this is for local ray cluster
         default_runtime_env = {"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN"}}
         ray_init_kwargs = config.ray_kwargs.get("ray_init", {})
-        runtime_env_kwargs = ray_init_kwargs.get("runtime_env", {})
-        runtime_env = OmegaConf.merge(default_runtime_env, runtime_env_kwargs)
-        ray_init_kwargs = OmegaConf.create({**ray_init_kwargs, "runtime_env": runtime_env})
+        ray_init_kwargs = prepare_ray_init_kwargs(
+            ray_init_kwargs=ray_init_kwargs,
+            default_runtime_env=default_runtime_env,
+            disable_tracking=config.ray_kwargs.get("disable_tracking", True),
+        )
         print(f"ray init kwargs: {ray_init_kwargs}")
         ray.init(**OmegaConf.to_container(ray_init_kwargs))
 

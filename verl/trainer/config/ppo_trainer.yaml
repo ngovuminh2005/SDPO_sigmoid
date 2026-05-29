@@ -310,6 +310,9 @@ transfer_queue:
 # configs related to ray
 ray_kwargs:
 
+  # Disable Ray usage stats and dashboard unless explicitly overridden.
+  disable_tracking: False
+
   # configs related to ray initialization
   ray_init:
 

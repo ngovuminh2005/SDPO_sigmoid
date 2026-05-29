@@ -187,5 +187,6 @@ trainer:
   default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
 
 ray_kwargs:
+  disable_tracking: False
   ray_init:
     num_cpus: null # `None` means using all CPUs, which might cause hang if limited in systems like SLURM. Please set to a number allowed then.

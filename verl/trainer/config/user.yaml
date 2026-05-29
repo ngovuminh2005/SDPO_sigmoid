@@ -2,10 +2,10 @@ defaults:
   - _self_
 
 vars:
-  dir: /media/volume/h100_volumne3/Muon_optimizer/minh/SDPO_sigmoid_muon
+  dir: /media/volume/intern_dat_minh/memory_based_optimizer/SDPO_sigmoid/
   task: ${oc.env:TASK}
-  log_dir: /media/volume/h100_volumne3/Muon_optimizer/minh/SDPO_sigmoid_muon/output
-  ckpt_dir: /media/volume/h100_volumne3/Muon_optimizer/minh/SDPO_sigmoid_muon/checkpoints
+  log_dir: /media/volume/intern_dat_minh/memory_based_optimizer/SDPO_sigmoid/output
+  ckpt_dir: /media/volume/intern_dat_minh/memory_based_optimizer/SDPO_sigmoid/checkpoints
 
 data:
   train_files: ["${vars.dir}/${vars.task}/train.parquet"]
@@ -24,13 +24,13 @@ actor_rollout_ref:
     clip_ratio_high: 0.28
     use_kl_loss: False
   model:
-    path: Qwen/Qwen3-8B
+    path: Qwen/Qwen3-1.7B
     trust_remote_code: True
   ref:
     log_prob_micro_batch_size_per_gpu: 1
   rollout:
     name: vllm
-    gpu_memory_utilization: 0.55
+    gpu_memory_utilization: 0.3
     log_prob_micro_batch_size_per_gpu: 1
     max_num_batched_tokens: ${max_model_len}
     max_model_len: ${max_model_len}
@@ -48,7 +48,7 @@ custom_reward_function:
 
 critic:
   model:
-    path: Qwen/Qwen3-8B
+    path: Qwen/Qwen3-1.7B
 
 reward_model:
   use_reward_loop: False # disables experimental reward manager (which gives lower scores)
@@ -64,5 +64,5 @@ trainer:
   hf_push_enabled: False
   test_freq: 5
   max_actor_ckpt_to_keep: 10
-  total_epochs: 1
+  total_epochs: 7
   default_local_dir: ${vars.ckpt_dir}/${trainer.experiment_name}  # experiment_name needs to be a unique identifier

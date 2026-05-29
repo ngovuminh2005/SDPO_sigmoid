@@ -1,19 +1,25 @@
 # Target class for this configuration
 _target_: verl.workers.config.FSDPOptimizerConfig
 
-# Optimizer class name (e.g., "AdamW", "AdamW8bit", "_AdamW", "Adam")
+# Optimizer choices:
+#   AdamW
+#   SingleDeviceMuonWithAuxAdam
+#   SingleDeviceMemoryMuonWithAuxAdam
 optimizer: AdamW
 
-# Module path to import optimizer
-# Examples: "torch.optim", "torchao.optim", "bitsandbytes.optim"
+# Module path to import optimizer from.
+# For repo-local Muon / Memory-Muon optimizers, this field is ignored.
+# Examples for non-Muon optimizers: torch.optim, torchao.optim, bitsandbytes.optim
 optimizer_impl: torch.optim
 
-# Learning rate (AdamW / torch.optim optimizers use this directly).
-# For Muon* aux+Adam optimizers: this is the auxiliary Adam branch LR unless `adam_aux_lr` is set.
+# Base learning rate.
+# - AdamW: applied directly.
+# - Muon / Memory-Muon: used by the auxiliary Adam branch unless `adam_aux_lr` overrides it.
 lr: 1e-5
 
-# Optional: auxiliary Adam LR for Muon* optimizers only (overrides `lr` for that branch).
-adam_aux_lr: 5e-6 #1e-5 
+# Optional: auxiliary Adam LR for Muon / Memory-Muon only.
+# If null, the top-level `lr` is reused so the Adam side stays aligned with AdamW.
+adam_aux_lr: null
 
 # LR warmup steps ratio
 lr_warmup_steps_ratio: 0.0
@@ -21,13 +27,13 @@ lr_warmup_steps_ratio: 0.0
 # Total training steps
 total_training_steps: -1
 
-# Weight decay
+# Weight decay shared across AdamW, Muon branch, and auxiliary Adam branch.
 weight_decay: 0.01
 
 # LR warmup steps
 lr_warmup_steps: -1
 
-# Betas for Adam optimizer
+# Betas for Adam optimizer / auxiliary Adam branch
 betas: [0.9, 0.999]
 
 # Clip gradient
@@ -39,7 +45,7 @@ min_lr_ratio: 0.0
 # Number of cosine cycles in LR schedule
 num_cycles: 0.5
 
-# LR scheduler type: "constant" or "cosine"
+# LR scheduler type: constant or cosine
 lr_scheduler_type: constant
 
 # deprecated
@@ -53,20 +59,20 @@ warmup_style: null
 #   bf16_stochastic_round: true
 override_optimizer_config: null
 
-# Muon + Adam. `build_optimizer` splits named_parameters: ndim>=2 -> Muon unless name matches
-# muon_exclude_name_substrings. optimizer_impl is ignored for these optimizers.
-#
-# Recommended single install (all 4 optimizer class names in module `muon`):
-#   pip install git+https://github.com/PhiVanDat123/sigmoid_muon
-#   MuonWithAuxAdam | SingleDeviceMuonWithAuxAdam | MuonWithAuxAdam_sigmoid | SingleDeviceMuonWithAuxAdam_sigmoid
-# Minimal upstream (no *_sigmoid classes): pip install git+https://github.com/KellerJordan/Muon
-# (Only one `muon` package should be installed at a time.)
-#
-# optimizer: SingleDeviceMuonWithAuxAdam_sigmoid
-# optimizer_impl: torch.optim
-
-# Muon branch LR (Muon* optimizers only; default 0.02 in code if omitted).
-muon_lr: 0.002 #0.005
+# Muon branch settings for Muon / Memory-Muon aux+Adam optimizers.
+muon_lr: 0.002
 muon_momentum: 0.95
+muon_nesterov: true
+muon_ns_steps: 5
 muon_exclude_name_substrings: [embed, lm_head, wte, vision]
 adam_aux_eps: 1e-10
+
+# Memory-Muon-only settings.
+memory_num_centroids: 16
+memory_centroid_dim: 1024
+memory_lambda: 0.01
+memory_init_seed: null
+memory_ema_decay: 0.99
+memory_ema_eps: 1e-8
+memory_step_update: 64
+memory_ema_ws_steps: 512
